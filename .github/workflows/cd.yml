@@ -1,0 +1,62 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [ "CI" ]
+    types: [ "completed" ]
+
+permissions:
+  contents: read
+  packages: read
+  pull-requests: write
+
+jobs:
+  mock_deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find PR for this SHA
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.payload.workflow_run.head_sha;
+            const { data } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} type:pr is:open ${sha}`
+            });
+            const pr = data.items && data.items.length ? data.items[0] : null;
+            core.setOutput('number', pr ? pr.number : '');
+            core.setOutput('branch', context.payload.workflow_run.head_branch);
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}:${BRANCH}
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          docker pull "$IMAGE"
+
+      - name: Run mock deployment
+        run: |
+          docker run --rm "$IMAGE" 2 3
+
+      - name: Comment on PR
+        if: ${{ steps.pr.outputs.number != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const number = Number(core.getInput('number')) || Number('${{ steps.pr.outputs.number }}');
+            const body = `✅ CD: Despliegue simulado exitoso.\n\n- Imagen: \`${process.env.IMAGE}\`\n- Comando: \`docker run ${process.env.IMAGE} 2 3\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              body
+            });
