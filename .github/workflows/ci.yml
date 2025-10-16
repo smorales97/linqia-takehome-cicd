@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-cov coverage ruff
 
-      - name: Lint (ruff)
+      - name: Linter (ruff)
         run: |
           ruff check . --fix
           ruff format .
