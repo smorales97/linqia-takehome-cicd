@@ -62,6 +62,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Debug image ref
+        run: |
+          echo "Image ref: '${{ steps.img.outputs.image }}'"
+          if [ -z "${{ steps.img.outputs.image }}" ]; then
+            echo "ERROR: Image ref is empty!"
+            exit 1
+          fi
+
       - name: Pull image
         run: docker pull "${{ steps.img.outputs.image }}"
 
