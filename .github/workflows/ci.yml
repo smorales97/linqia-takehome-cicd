@@ -92,36 +92,36 @@ jobs:
           path: image.txt
 
   trivy_scan:
-  name: Security scan (Trivy)
-  runs-on: ubuntu-latest
-  needs: build_and_push
-  steps:
-    - name: Login to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    name: Security scan (Trivy)
+    runs-on: ubuntu-latest
+    needs: build_and_push
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Download image ref artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: image-ref
-        path: .
+      - name: Download image ref artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-ref
+          path: .
 
-    - name: Read image ref
-      id: img
-      run: echo "image=$(cat image.txt)" >> "$GITHUB_OUTPUT"
+      - name: Read image ref
+        id: img
+        run: echo "image=$(cat image.txt)" >> "$GITHUB_OUTPUT"
 
-    - name: Scan image with Trivy
-      uses: aquasecurity/trivy-action@0.24.0
-      with:
-        scan-type: image
-        image-ref: ${{ steps.img.outputs.image }}
-        format: table
-        exit-code: "0"
-        vuln-type: "os,library"
-        severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.img.outputs.image }}
+          format: table
+          exit-code: "0"
+          vuln-type: "os,library"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
 
   comment_pr:
     needs: [ test, build_and_push ]
