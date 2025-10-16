@@ -133,13 +133,14 @@ This project uses two GitHub Actions workflows contained in a **public forked re
 
 ---
 
-**Author:** *[Santiago Morales]*
-**Repository:** [https://github.com/smorales97/linqia-takehome-cicd](https://github.com/smorales97/linqia-takehome-cicd)
+**Author:** *Santiago Morales*
+**Repository:** [https://github.com/smorales97/linqia-takehome-cicd]
+(https://github.com/smorales97/linqia-takehome-cicd)
 **Submission:** Linqia CI/CD Specialist Take-Home Assignment
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
 
-# CI/CD – Diseño Técnico (Prueba Linqia Take-Home)  ES
+# ES - CI/CD – Diseño Técnico (Prueba Linqia Take-Home)
 
 ## Objetivos del Proyecto
 
@@ -276,6 +277,6 @@ Este proyecto utiliza dos workflows de GitHub Actions dentro de un **repositorio
 
 ---
 
-**Autor:** *[Santiago Morales]*
+**Autor:** *Santiago Morales*
 **Repositorio:** [https://github.com/smorales97/linqia-takehome-cicd](https://github.com/smorales97/linqia-takehome-cicd)
 **Entrega:** Linqia CI/CD Specialist Take-Home Assignment
