@@ -131,38 +131,101 @@ jobs:
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
 
   comment_pr:
-    needs: [ test, build_and_push ]
-    if: ${{ github.event_name == 'pull_request' && needs.test.result == 'success' && needs.build_and_push.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
+      needs: [ test, build_and_push ]
+      if: ${{ github.event_name == 'pull_request' && needs.test.result == 'success' && needs.build_and_push.result == 'success' }}
+      runs-on: ubuntu-latest
+      steps:
+      # Descarga TODOS los artifacts de test (las 3 matrices) en ./artifacts
+      - name: Download test artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
-      - name: Derive image name
-        id: derive
-        run: |
-          echo "image=ghcr.io/${{ github.repository }}:${{ github.head_ref || github.ref_name }}" >> $GITHUB_OUTPUT
+      # Descarga también el artifact con la referencia exacta de la imagen (image.txt)
+      - name: Download image ref artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-ref
+          path: ./artifacts/image-ref
 
+      # Lee la referencia de imagen publicada por CI (evita problemas de tags con '/')
+      - name: Read image ref
+        id: img
+        run: echo "image=$(cat artifacts/image-ref/image.txt)" >> "$GITHUB_OUTPUT"
+
+      # Calcula enlaces útiles (run de Actions y página de Packages del repo)
+      - name: Derive links
+        id: meta
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+          OWNER_REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          PKG_URL="https://github.com/${OWNER_REPO_LC}/packages"
+          echo "pkg_url=$PKG_URL" >> $GITHUB_OUTPUT
+
+      # Cobertura (toma la de py3.12 por simplicidad; se puede extender a promedio)
       - name: Parse coverage %
         id: cov
         run: |
-          COV=$(awk -F'"' '/line-rate/ {print $2; exit}' artifacts/test-artifacts-py3.12/coverage.xml)
-          if [ -z "$COV" ]; then COV="n/a"; fi
+          COV_FILE="artifacts/test-artifacts-py3.12/coverage.xml"
+          if [ -f "$COV_FILE" ]; then
+            COV=$(awk -F'"' '/line-rate/ {print $2; exit}' "$COV_FILE")
+          else
+            COV=""
+          fi
+          [ -z "$COV" ] && COV="n/a"
           echo "pct=$COV" >> $GITHUB_OUTPUT
+
+      # Resumen de pruebas sumando los junit de las 3 versiones
+      - name: Summarize test results (junit)
+        id: junit
+        shell: bash
+        run: |
+          total=0; failed=0; errors=0; skipped=0
+          shopt -s nullglob
+          for f in artifacts/**/junit.xml; do
+            t=$(awk -F'"' '/testsuites|testsuite/ { for(i=1;i<=NF;i++){ if($i ~ /^tests=/){ split($i,a,"="); gsub("\"","",a[2]); print a[2]; exit } } }' "$f")
+            f1=$(awk -F'"' '/testsuites|testsuite/ { for(i=1;i<=NF;i++){ if($i ~ /^failures=/){ split($i,a,"="); gsub("\"","",a[2]); print a[2]; exit } } }' "$f")
+            e1=$(awk -F'"' '/testsuites|testsuite/ { for(i=1;i<=NF;i++){ if($i ~ /^errors=/){ split($i,a,"="); gsub("\"","",a[2]); print a[2]; exit } } }' "$f")
+            s1=$(awk -F'"' '/testsuites|testsuite/ { for(i=1;i<=NF;i++){ if($i ~ /^skipped=/){ split($i,a,"="); gsub("\"","",a[2]); print a[2]; exit } } }' "$f")
+            total=$(( total + ${t:-0} ))
+            failed=$(( failed + ${f1:-0} ))
+            errors=$(( errors + ${e1:-0} ))
+            skipped=$(( skipped + ${s1:-0} ))
+          done
+          passed=$(( total - failed - errors - skipped ))
+          echo "total=$total"   >> $GITHUB_OUTPUT
+          echo "passed=$passed" >> $GITHUB_OUTPUT
+          echo "failed=$failed" >> $GITHUB_OUTPUT
+          echo "errors=$errors" >> $GITHUB_OUTPUT
+          echo "skipped=$skipped" >> $GITHUB_OUTPUT
 
       - name: Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
-            const image = `${{ steps.derive.outputs.image }}`;
-            const cov = `${{ steps.cov.outputs.pct }}`;
-            let body = `### CI Summary\n` +
-                       `- **Image:** \`${image}\`\n` +
-                       `- **Coverage (py3.12):** ${cov === 'n/a' ? 'n/a' : (Number(cov)*100).toFixed(1) + '%'}\n` +
-                       `- **Artifacts:** downloaded for all matrix variants.`;
-            github.rest.issues.createComment({
+            const image   = `${{ steps.img.outputs.image }}`;
+            const runUrl  = `${{ steps.meta.outputs.run_url }}`;
+            const pkgUrl  = `${{ steps.meta.outputs.pkg_url }}`;
+            const cov     = `${{ steps.cov.outputs.pct }}`;
+            const total   = `${{ steps.junit.outputs.total }}`;
+            const passed  = `${{ steps.junit.outputs.passed }}`;
+            const failed  = `${{ steps.junit.outputs.failed }}`;
+            const errors  = `${{ steps.junit.outputs.errors }}`;
+            const skipped = `${{ steps.junit.outputs.skipped }}`;
+            const covPct  = (cov === 'n/a') ? 'n/a' : `${(Number(cov)*100).toFixed(1)}%`;
+
+            const body = [
+              '### CI Summary',
+              `- **Image:** \`${image}\`  •  [Packages page](${pkgUrl})`,
+              `- **Tests:** ${passed}/${total} passed  •  failed: ${failed}  •  errors: ${errors}  •  skipped: ${skipped}`,
+              `- **Coverage:** ${covPct}`,
+              `- **Artifacts:** [Download from this run](${runUrl})`,
+              '',
+              '> Image tag matches the PR branch (sanitized). Trivy scan ran as informational.'
+            ].join('\n');
+
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
