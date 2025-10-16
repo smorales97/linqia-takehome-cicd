@@ -29,13 +29,13 @@ jobs:
             const sha = context.payload.workflow_run.head_sha;
             const branch = context.payload.workflow_run.head_branch;
             console.log(`Looking for PR with SHA: ${sha}, branch: ${branch}`);
-            
+
             const { data } = await github.rest.search.issuesAndPullRequests({
               q: `repo:${context.repo.owner}/${context.repo.repo} type:pr is:open ${sha}`
             });
             const pr = data.items && data.items.length ? data.items[0] : null;
             console.log(`Found PR:`, pr ? pr.number : 'none');
-            
+
             core.setOutput('number', pr ? pr.number : '');
             core.setOutput('branch', branch || '');
 
@@ -47,7 +47,7 @@ jobs:
 
           raw_branch='${{ steps.pr.outputs.branch }}'
           echo "DEBUG: raw_branch='$raw_branch'"
-          
+
           if [ -z "$raw_branch" ]; then
             echo "ERROR: Branch vacío desde workflow_run.head_branch"
             echo "Fallback: usando 'main'"
@@ -82,17 +82,20 @@ jobs:
 
       - name: Debug image ref
         run: |
-          echo "Image ref: '${{ steps.img.outputs.image }}'"
+          echo "Resolved image ref: '${{ steps.img.outputs.image }}'"
           if [ -z "${{ steps.img.outputs.image }}" ]; then
-            echo "ERROR: Image ref is empty!"
-            exit 1
+            echo "❌ ERROR: Image ref is empty!"; exit 1
           fi
 
       - name: Pull image
-        run: docker pull "${{ steps.img.outputs.image }}"
+        run: |
+          echo "Pulling ${{ steps.img.outputs.image }}"
+          docker pull "${{ steps.img.outputs.image }}"
 
       - name: Run mock deployment
-        run: docker run --rm "${{ steps.img.outputs.image }}" 2 3
+        run: |
+          echo "Running mock deployment for ${{ steps.img.outputs.image }}"
+          docker run --rm "${{ steps.img.outputs.image }}" 2 3
 
       - name: Comment on PR
         if: ${{ steps.pr.outputs.number != '' }}
