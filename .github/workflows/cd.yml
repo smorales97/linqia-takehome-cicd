@@ -37,26 +37,15 @@ jobs:
             core.setOutput('number', pr ? pr.number : '');
             core.setOutput('branch', branch || '');
 
-      - name: Compute image ref (sanitize)
+      - name: Download image ref from CI
+        uses: actions/download-artifact@v4
+        with:
+          name: image-ref
+          path: .
+
+      - name: Read image ref
         id: img
-        shell: bash
-        run: |
-          set -euo pipefail
-          raw_branch='${{ steps.pr.outputs.branch }}'
-          if [ -z "$raw_branch" ]; then
-            echo "No branch in workflow_run; fallback to 'main'"
-            raw_branch="main"
-          fi
-          repo='${{ github.repository }}'
-          repo_lc=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
-          safe_branch=$(echo "$raw_branch" \
-            | tr '[:upper:]' '[:lower:]' \
-            | tr '/:@ ' '-' \
-            | sed -E 's/[^a-z0-9._-]+/-/g' \
-            | sed -E 's/^-+//; s/-+$//')
-          image="ghcr.io/${repo_lc}:${safe_branch}"
-          echo "Resolved image: $image (raw='$raw_branch')"
-          echo "image=${image}" >> "$GITHUB_OUTPUT"
+        run: echo "image=$(cat image.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -66,16 +55,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        shell: bash
-        run: |
-          echo "Pulling '${{ steps.img.outputs.image }}'"
-          docker pull "${{ steps.img.outputs.image }}"
+        run: docker pull "${{ steps.img.outputs.image }}"
 
       - name: Run mock deployment
-        shell: bash
-        run: |
-          echo "Running '${{ steps.img.outputs.image }}' 2 3"
-          docker run --rm "${{ steps.img.outputs.image }}" 2 3
+        run: docker run --rm "${{ steps.img.outputs.image }}" 2 3
 
       - name: Comment on PR
         if: ${{ steps.pr.outputs.number != '' }}
