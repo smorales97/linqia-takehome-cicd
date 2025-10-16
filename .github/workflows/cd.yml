@@ -14,19 +14,44 @@ jobs:
   mock_deploy:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     steps:
+      - name: Debug workflow_run context
+        shell: bash
+        run: |
+          echo "workflow_run.head_branch='${{ github.event.workflow_run.head_branch }}'"
+          echo "workflow_run.head_sha='${{ github.event.workflow_run.head_sha }}'"
+          echo "github.repository='${{ github.repository }}'"
+
       - name: Find PR for this SHA
         id: pr
         uses: actions/github-script@v7
         with:
           script: |
             const sha = context.payload.workflow_run.head_sha;
+            const branch = context.payload.workflow_run.head_branch;
             const { data } = await github.rest.search.issuesAndPullRequests({
               q: `repo:${context.repo.owner}/${context.repo.repo} type:pr is:open ${sha}`
             });
             const pr = data.items && data.items.length ? data.items[0] : null;
             core.setOutput('number', pr ? pr.number : '');
-            core.setOutput('branch', context.payload.workflow_run.head_branch);
+            core.setOutput('branch', branch || '');
+
+      - name: Compute image ref (sanitize)
+        id: img
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo='${{ github.repository }}'
+          repo_lc=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
+          raw='${{ github.event.workflow_run.head_branch }}'
+          safe=$(echo "$raw" \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr '/:@ ' '-' \
+            | sed -E 's/[^a-z0-9._-]+/-/g' \
+            | sed -E 's/^-+//; s/-+$//')
+          echo "image=ghcr.io/${repo_lc}:${safe}" >> "$GITHUB_OUTPUT"
+          echo "Resolved image: ghcr.io/${repo_lc}:${safe} (raw='${raw}')"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -36,24 +61,25 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        env:
-          BRANCH: ${{ steps.pr.outputs.branch }}
+        shell: bash
         run: |
-          IMAGE=ghcr.io/${{ github.repository }}:${BRANCH}
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-          docker pull "$IMAGE"
+          echo "Pulling '${{ steps.img.outputs.image }}'"
+          docker pull "${{ steps.img.outputs.image }}"
 
       - name: Run mock deployment
+        shell: bash
         run: |
-          docker run --rm "$IMAGE" 2 3
+          echo "Running '${{ steps.img.outputs.image }}' 2 3"
+          docker run --rm "${{ steps.img.outputs.image }}" 2 3
 
       - name: Comment on PR
         if: ${{ steps.pr.outputs.number != '' }}
         uses: actions/github-script@v7
         with:
           script: |
-            const number = Number(core.getInput('number')) || Number('${{ steps.pr.outputs.number }}');
-            const body = `CD: Despliegue exitoso.\n\n- Imagen: \`${process.env.IMAGE}\`\n- Comando: \`docker run ${process.env.IMAGE} 2 3\``;
+            const number = Number('${{ steps.pr.outputs.number }}');
+            const image = `${{ steps.img.outputs.image }}`;
+            const body = `✅ CD: Despliegue simulado exitoso.\n\n- Imagen: \`${image}\`\n- Comando: \`docker run ${image} 2 3\``;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

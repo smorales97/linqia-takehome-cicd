@@ -75,7 +75,11 @@ jobs:
         id: vars
         run: |
           ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          safe_ref=$(echo "$ref" | tr '/' '-' | tr ' ' '-' | tr -cd '[:alnum:]-_.')
+          safe_ref=$(echo "$ref" \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr '/:@ ' '-' \
+            | sed -E 's/[^a-z0-9._-]+/-/g' \
+            | sed -E 's/^-+//; s/-+$//')
           echo "branch=$safe_ref" >> $GITHUB_OUTPUT
 
       - name: Build image
