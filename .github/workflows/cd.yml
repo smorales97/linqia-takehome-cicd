@@ -28,22 +28,33 @@ jobs:
             core.setOutput('number', pr ? pr.number : '');
             core.setOutput('branch', context.payload.workflow_run.head_branch || '');
 
-      - name: Compute image ref (sanitize branch)
+      - name: Compute image ref (sanitize)
         id: img
+        shell: bash
         run: |
-          ref="${{ steps.pr.outputs.branch }}"
-          if [ -z "$ref" ]; then
+          set -euo pipefail
+
+          raw_branch='${{ steps.pr.outputs.branch }}'
+          if [ -z "$raw_branch" ]; then
             echo "Branch vacío desde workflow_run.head_branch"; exit 1
           fi
-          # minúsculas + reemplaza caracteres inválidos para tags Docker
-          safe_ref=$(echo "$ref" \
+
+          # repo en minúsculas (GHCR exige lowercase)
+          repo='${{ github.repository }}'
+          repo_lc=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
+
+          # saneo del tag: minúsculas, reemplaza separadores inválidos por '-', filtra caracteres
+          safe_branch=$(echo "$raw_branch" \
             | tr '[:upper:]' '[:lower:]' \
             | tr '/:@ ' '-' \
-            | sed 's/[^a-z0-9._-]/-/g' \
-            | sed 's/^-*//' | sed 's/-*$//')
-          image="ghcr.io/${{ github.repository }}:${safe_ref}"
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "Usando imagen: $image"
+            | sed -E 's/[^a-z0-9._-]+/-/g' \
+            | sed -E 's/^-+//; s/-+$//')
+
+          image="ghcr.io/${repo_lc}:${safe_branch}"
+
+          echo "::notice title=CD tag::raw='${raw_branch}' -> safe='${safe_branch}'"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -64,7 +75,7 @@ jobs:
           script: |
             const number = Number('${{ steps.pr.outputs.number }}');
             const image = `${{ steps.img.outputs.image }}`;
-            const body = `✅ CD: Despliegue exitoso.\n\n- Imagen: \`${image}\`\n- Comando: \`docker run ${image} 2 3\``;
+            const body = `✅ CD: Despliegue simulado exitoso.\n\n- Imagen: \`${image}\`\n- Comando: \`docker run ${image} 2 3\``;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
