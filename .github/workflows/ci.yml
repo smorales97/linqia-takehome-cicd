@@ -141,10 +141,11 @@ jobs:
         run: |
           echo "image=ghcr.io/${{ github.repository }}:${{ github.head_ref || github.ref_name }}" >> $GITHUB_OUTPUT
 
-      - name: Parse coverage from coverage.xml (best effort)
+      - name: Parse coverage %
         id: cov
         run: |
-          COV=$(grep -oP 'line-rate="\K[0-9.]+(?=")' artifacts/test-artifacts-py3.12/coverage.xml || echo "n/a")
+          COV=$(awk -F'"' '/line-rate/ {print $2; exit}' artifacts/test-artifacts-py3.12/coverage.xml)
+          if [ -z "$COV" ]; then COV="n/a"; fi
           echo "pct=$COV" >> $GITHUB_OUTPUT
 
       - name: Comment on PR
